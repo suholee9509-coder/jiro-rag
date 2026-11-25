@@ -49,8 +49,8 @@ tests/             AWS 없이 Lambda 코드 흐름을 확인하는 테스트
 AWS 콘솔의 CloudShell에서 실행하면 따로 설치할 것이 없습니다(AWS CLI, SAM CLI, git이 들어 있습니다). 콘솔 오른쪽 위에서 리전을 **서울**로 바꾼 뒤 CloudShell을 엽니다.
 
 ```bash
-git clone https://github.com/<계정>/<저장소>.git
-cd <저장소>
+git clone https://github.com/suholee9509-coder/jiro-rag.git
+cd jiro-rag
 ./deploy.sh                 # 예산 알림 없이
 ./deploy.sh me@example.com  # 월 5달러의 80%를 넘으면 메일로 알림
 ```
