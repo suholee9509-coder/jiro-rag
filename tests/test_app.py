@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "query")
 os.environ.update({
     "DOCS_BUCKET": "docs",
     "VECTOR_INDEX_ARN": "arn:aws:s3vectors:ap-northeast-2:1:bucket/b/index/responses",
-    "GENERATION_MODEL_ID": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "GENERATION_MODEL_ID": "global.anthropic.claude-haiku-5-5",
     "EMBEDDING_MODEL_ID": "amazon.titan-embed-text-v2:0",
     "EMBEDDING_DIMENSION": "1024",
 })
@@ -33,7 +33,12 @@ def fake_clients(fail=None):
         "body": io.BytesIO(json.dumps({"embedding": [0.1] * 1024}).encode())
     }
     bedrock.converse.return_value = {
-        "output": {"message": {"content": [{"text": "연결 확인"}]}}
+        # Haiku 5.5는 생각 내용이 글보다 앞에 올 수 있다.
+        "output": {"message": {"content": [
+            {"reasoningContent": {"reasoningText": {"text": "..."}}},
+            {"text": "연결 확인"},
+        ]}},
+        "usage": {"inputTokens": 20, "outputTokens": 12},
     }
     if fail == "generation":
         bedrock.converse.side_effect = RuntimeError("AccessDeniedException")

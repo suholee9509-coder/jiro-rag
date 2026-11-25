@@ -8,7 +8,7 @@ Description: >
 Parameters:
   GenerationModelId:
     Type: String
-    Default: global.anthropic.claude-haiku-4-5-20251001-v1:0
+    Default: global.anthropic.claude-haiku-5-5
     Description: 생성 모델의 추론 프로필 ID. 서울 리전에서는 글로벌 추론 프로필로만 호출할 수 있다.
   EmbeddingModelId:
     Type: String

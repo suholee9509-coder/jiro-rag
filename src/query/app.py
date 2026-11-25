@@ -92,10 +92,20 @@ def check_generation():
         messages=[
             {"role": "user", "content": [{"text": "'연결 확인'이라고만 답해 주세요."}]}
         ],
-        inferenceConfig={"maxTokens": 30, "temperature": 0},
+        # Haiku 5.5는 답하기 전에 생각하는 과정이 출력 한도에 포함되므로 여유를 둔다.
+        inferenceConfig={"maxTokens": 512},
     )
-    text = response["output"]["message"]["content"][0]["text"]
-    return {"model": GENERATION_MODEL_ID, "reply": text.strip()}
+    blocks = response["output"]["message"]["content"]
+    text = next((b["text"] for b in blocks if "text" in b), "").strip()
+    if not text:
+        raise RuntimeError("모델이 글을 돌려주지 않았습니다.")
+    usage = response.get("usage", {})
+    return {
+        "model": GENERATION_MODEL_ID,
+        "reply": text,
+        "input_tokens": usage.get("inputTokens"),
+        "output_tokens": usage.get("outputTokens"),
+    }
 
 
 def run_check(name, label, func):

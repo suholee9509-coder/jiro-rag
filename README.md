@@ -16,7 +16,7 @@
 브라우저 → CloudFront ─┬→ S3 웹 버킷 (화면 파일)
                        └→ API Gateway → Lambda ─┬→ S3 문서 버킷 (설문 파일)
                                                 ├→ S3 Vectors (벡터 인덱스)
-                                                └→ Bedrock (Titan 임베딩, Claude Haiku)
+                                                └→ Bedrock (Titan 임베딩, Claude Haiku 5.5)
 ```
 
 | AWS 서비스 | 쓰는 곳 |
@@ -26,12 +26,12 @@
 | Amazon API Gateway (REST API) | 질문을 받는 창구. 초당 5회 호출 제한 |
 | AWS Lambda (Python 3.13) | 질문 처리. 2주차에는 연결 확인만 |
 | Amazon S3 Vectors | 벡터 인덱스 `responses` (1,024차원, 코사인 거리) |
-| Amazon Bedrock | Titan Text Embeddings V2, Claude Haiku 4.5 |
+| Amazon Bedrock | Titan Text Embeddings V2, Claude Haiku 5.5 |
 | AWS IAM | Lambda에 필요한 권한만 부여 (읽기·조회·모델 호출) |
 | Amazon CloudWatch | Lambda 로그, 30일 뒤 자동 삭제 |
 | AWS Budgets | 월 예산 알림 (선택) |
 
-리전은 서울(ap-northeast-2)입니다. Claude Haiku는 서울 리전에서 글로벌 추론 프로필로 호출합니다.
+리전은 서울(ap-northeast-2)입니다. Claude Haiku 5.5는 서울 리전에서 글로벌 추론 프로필로 호출합니다.
 
 ## 폴더
 
@@ -62,7 +62,7 @@ bash setup.sh me@example.com  # 월 5달러의 80%를 넘으면 메일로 알림
 
 ### 처음 한 번 필요한 것
 
-Anthropic 모델을 계정에서 처음 쓸 때는 Bedrock 콘솔에서 사용 목적을 적어 내야 할 수 있습니다. 연결 확인에서 "생성 모델 호출"만 실패하면 Bedrock 콘솔의 모델 카탈로그에서 Claude Haiku 4.5를 열어 안내에 따라 제출한 뒤 다시 확인합니다.
+Anthropic 모델을 계정에서 처음 쓸 때는 Bedrock 콘솔에서 사용 목적을 적어 내야 할 수 있습니다. 연결 확인에서 "생성 모델 호출"만 실패하면 Bedrock 콘솔의 모델 카탈로그에서 Claude Haiku 5.5를 열어 안내에 따라 제출한 뒤 다시 확인합니다.
 
 ## 연결 확인
 
