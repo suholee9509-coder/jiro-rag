@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jiro(가칭) 연결 확인</title>
+<style>
+  :root { color-scheme: light dark; --line: #d9dde3; --muted: #6b7280; --ok: #15803d; --bad: #b91c1c; }
+  body { font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+  #summary { margin: 20px 0 12px; font-weight: 600; }
+  .row { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .mark { width: 44px; flex: none; font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .name { font-weight: 600; }
+  .ms { color: var(--muted); font-size: 13px; margin-left: 6px; font-weight: 400; }
+  pre { margin: 4px 0 0; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+  footer { margin-top: 24px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Jiro(가칭) 설문 응답 챗봇 · 연결 확인</h1>
+  <p class="sub">이 화면은 CloudFront를 거쳐 API Gateway와 Lambda를 호출하고, Lambda가 각 AWS 구성 요소에 접근되는지 확인한 결과를 보여줍니다.</p>
+  <button id="run">다시 확인</button>
+  <div id="summary">확인 중입니다.</div>
+  <div id="list"></div>
+  <footer id="time"></footer>
+<script>
+const list = document.getElementById('list');
+const summary = document.getElementById('summary');
+const stamp = document.getElementById('time');
+
+function row(check) {
+  const el = document.createElement('div');
+  el.className = 'row';
+  const mark = document.createElement('div');
+  mark.className = 'mark ' + (check.ok ? 'ok' : 'bad');
+  mark.textContent = check.ok ? '정상' : '실패';
+  const body = document.createElement('div');
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = check.label;
+  const ms = document.createElement('span');
+  ms.className = 'ms';
+  ms.textContent = check.ms + 'ms';
+  name.appendChild(ms);
+  const detail = document.createElement('pre');
+  detail.textContent = JSON.stringify(check.detail, null, 2);
+  body.append(name, detail);
+  el.append(mark, body);
+  return el;
+}
+
+async function run() {
+  summary.textContent = '확인 중입니다.';
+  summary.className = '';
+  list.replaceChildren();
+  try {
+    const response = await fetch('/api/health', { cache: 'no-store' });
+    const data = await response.json();
+    const passed = data.checks.filter(c => c.ok).length;
+    summary.textContent = data.ok
+      ? '모든 연결이 정상입니다. (' + passed + '/' + data.checks.length + ')'
+      : '일부 연결에 실패했습니다. (' + passed + '/' + data.checks.length + ')';
+    summary.className = data.ok ? 'ok' : 'bad';
+    data.checks.forEach(c => list.appendChild(row(c)));
+  } catch (error) {
+    summary.textContent = 'API를 호출하지 못했습니다: ' + error.message;
+    summary.className = 'bad';
+  }
+  stamp.textContent = '확인 시각: ' + new Date().toLocaleString('ko-KR');
+}
+
+document.getElementById('run').addEventListener('click', run);
+run();
+</script>
+</body>
+</html>

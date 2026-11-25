@@ -1,0 +1,276 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Jiro(가칭) - 설문 주관식 응답 챗봇. 2주차 환경 구성:
+  웹 화면(S3 + CloudFront), API(API Gateway + Lambda), 문서 버킷(S3),
+  벡터 저장소(S3 Vectors), 모델 호출 권한(Bedrock), 로그(CloudWatch).
+
+Parameters:
+  GenerationModelId:
+    Type: String
+    Default: global.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: 생성 모델의 추론 프로필 ID. 서울 리전에서는 글로벌 추론 프로필로만 호출할 수 있다.
+  EmbeddingModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+    Description: 임베딩 모델 ID. 서울 리전 안에서 처리된다.
+  EmbeddingDimension:
+    Type: Number
+    Default: 1024
+    Description: 임베딩 벡터의 차원 수. 벡터 인덱스와 같아야 한다.
+  BudgetEmail:
+    Type: String
+    Default: ""
+    Description: 예산 알림을 받을 이메일. 비워 두면 예산 알림을 만들지 않는다.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 5
+    Description: 월 예산(달러). 80%를 넘으면 이메일로 알린다.
+
+Conditions:
+  HasBudgetEmail: !Not [!Equals [!Ref BudgetEmail, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    Timeout: 29
+    MemorySize: 512
+
+Resources:
+  # ---------------------------------------------------------------- 저장소
+  # 챗봇 화면 파일을 두는 버킷. 외부에서 직접 열 수 없고 CloudFront만 읽는다.
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${WebBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # 설문 파일을 두는 버킷. raw/ 는 올린 원본, processed/ 는 적재 과정에서 정리한 파일.
+  DocsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+
+  # 응답 조각의 벡터와 부가 정보를 두는 저장소.
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+
+  VectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
+      IndexName: responses
+      DataType: float32
+      Dimension: !Ref EmbeddingDimension
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        # 원문 글은 조건으로 쓰지 않으므로 필터 대상에서 뺀다.
+        NonFilterableMetadataKeys:
+          - chunk_text
+          - answer_text
+
+  # ---------------------------------------------------------------- API
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      EndpointConfiguration:
+        Type: REGIONAL
+      MethodSettings:
+        # 과도한 호출을 막는 횟수 제한 (초당 5회, 순간 최대 10회)
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingRateLimit: 5
+          ThrottlingBurstLimit: 10
+
+  QueryFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+
+  # 질문 처리 Lambda. 2주차에는 연결 확인(/api/health)만 한다.
+  QueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/query/
+      Handler: app.handler
+      Description: 질문 처리 Lambda (2주차 - 연결 확인)
+      LoggingConfig:
+        LogGroup: !Ref QueryFunctionLogGroup
+      Environment:
+        Variables:
+          DOCS_BUCKET: !Ref DocsBucket
+          VECTOR_BUCKET_ARN: !GetAtt VectorBucket.VectorBucketArn
+          VECTOR_INDEX_ARN: !GetAtt VectorIndex.IndexArn
+          GENERATION_MODEL_ID: !Ref GenerationModelId
+          EMBEDDING_MODEL_ID: !Ref EmbeddingModelId
+          EMBEDDING_DIMENSION: !Ref EmbeddingDimension
+      Policies:
+        # 필요한 권한만: 정리본 읽기, 벡터 조회, 모델 호출. 쓰기·삭제 권한은 없다.
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: ReadProcessedFiles
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "${DocsBucket.Arn}/processed/*"
+            - Sid: ListProcessedFiles
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt DocsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix: "processed/*"
+            - Sid: QueryVectors
+              Effect: Allow
+              Action:
+                - s3vectors:GetIndex
+                - s3vectors:QueryVectors
+                - s3vectors:GetVectors
+              Resource: !GetAtt VectorIndex.IndexArn
+            - Sid: InvokeEmbeddingModel
+              Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}"
+            - Sid: InvokeGenerationModel
+              Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource:
+                - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${GenerationModelId}"
+                - "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-*"
+                - "arn:aws:bedrock:::foundation-model/anthropic.claude-haiku-*"
+      Events:
+        Health:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Api
+            Path: /api/health
+            Method: GET
+
+  # ---------------------------------------------------------------- 화면 전달
+  WebOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-web-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} 화면과 API"
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            DomainName: !Sub "${Api}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: /prod
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          # 관리형 정책 CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors:
+          - PathPattern: "/api/*"
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            # 관리형 정책 CachingDisabled / AllViewerExceptHostHeader
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  # ---------------------------------------------------------------- 예산 알림
+  Budget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref BudgetEmail
+
+Outputs:
+  SiteUrl:
+    Description: 챗봇 화면 주소 (CloudFront)
+    Value: !Sub "https://${Distribution.DomainName}"
+  HealthUrl:
+    Description: 연결 확인 API 주소
+    Value: !Sub "https://${Distribution.DomainName}/api/health"
+  WebBucketName:
+    Description: 화면 파일 버킷
+    Value: !Ref WebBucket
+  DocsBucketName:
+    Description: 문서 버킷
+    Value: !Ref DocsBucket
+  VectorBucketArn:
+    Description: 벡터 버킷 ARN
+    Value: !GetAtt VectorBucket.VectorBucketArn
+  VectorIndexArn:
+    Description: 벡터 인덱스 ARN
+    Value: !GetAtt VectorIndex.IndexArn
+  QueryFunctionName:
+    Description: 질문 처리 Lambda 이름
+    Value: !Ref QueryFunction
