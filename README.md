@@ -38,7 +38,8 @@
 ```
 template.yaml      AWS 자원 전체를 정의한 설정 파일 (AWS SAM)
 samconfig.toml     배포 기본값 (스택 이름, 리전)
-deploy.sh          배포 → 화면 파일 올리기 → 연결 확인까지 한 번에
+setup.sh           저장소 내려받기부터 연결 확인까지 한 번에 (처음 실행용)
+deploy.sh          배포 → 화면 파일 올리기 → 연결 확인
 src/query/app.py   질문 처리 Lambda
 web/index.html     연결 확인 화면
 tests/             AWS 없이 Lambda 코드 흐름을 확인하는 테스트
@@ -48,12 +49,14 @@ tests/             AWS 없이 Lambda 코드 흐름을 확인하는 테스트
 
 AWS 콘솔의 CloudShell에서 실행하면 따로 설치할 것이 없습니다(AWS CLI, SAM CLI, git이 들어 있습니다). 콘솔 오른쪽 위에서 리전을 **서울**로 바꾼 뒤 CloudShell을 엽니다.
 
+`setup.sh` 하나로 저장소 내려받기, 배포, 화면 파일 올리기, 연결 확인까지 진행합니다. CloudShell의 "작업 → 파일 업로드"로 `setup.sh`를 올린 뒤 실행합니다.
+
 ```bash
-git clone https://github.com/suholee9509-coder/jiro-rag.git
-cd jiro-rag
-./deploy.sh                 # 예산 알림 없이
-./deploy.sh me@example.com  # 월 5달러의 80%를 넘으면 메일로 알림
+bash setup.sh                 # 예산 알림 없이
+bash setup.sh me@example.com  # 월 5달러의 80%를 넘으면 메일로 알림
 ```
+
+이미 저장소를 내려받았다면 폴더 안에서 `./deploy.sh`만 실행해도 됩니다.
 
 처음 배포는 CloudFront 때문에 5~10분 걸립니다. 끝나면 화면 주소가 출력됩니다.
 
