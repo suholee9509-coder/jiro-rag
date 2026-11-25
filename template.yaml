@@ -1,31 +1,33 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
+# Jiro(가칭) - 설문 주관식 응답 챗봇. 2주차 환경 구성.
+# (Description 등 AWS 콘솔에 표시되는 값은 한글이 깨져 보여 영어로 적는다.)
 Description: >
-  Jiro(가칭) - 설문 주관식 응답 챗봇. 2주차 환경 구성:
-  웹 화면(S3 + CloudFront), API(API Gateway + Lambda), 문서 버킷(S3),
-  벡터 저장소(S3 Vectors), 모델 호출 권한(Bedrock), 로그(CloudWatch).
+  Jiro survey-response RAG chatbot (week 2 environment):
+  web (S3 + CloudFront), API (API Gateway + Lambda), document bucket (S3),
+  vector store (S3 Vectors), model access (Bedrock), logs (CloudWatch).
 
 Parameters:
   GenerationModelId:
     Type: String
     Default: global.anthropic.claude-haiku-5-5
-    Description: 생성 모델의 추론 프로필 ID. 서울 리전에서는 글로벌 추론 프로필로만 호출할 수 있다.
+    Description: Generation model inference profile ID. Seoul supports the global profile only.  # 생성 모델. 서울 리전은 글로벌 추론 프로필만 가능
   EmbeddingModelId:
     Type: String
     Default: amazon.titan-embed-text-v2:0
-    Description: 임베딩 모델 ID. 서울 리전 안에서 처리된다.
+    Description: Embedding model ID. Processed inside the Seoul region.  # 임베딩 모델. 서울 리전 안에서 처리
   EmbeddingDimension:
     Type: Number
     Default: 1024
-    Description: 임베딩 벡터의 차원 수. 벡터 인덱스와 같아야 한다.
+    Description: Embedding vector dimension. Must match the vector index.  # 벡터 차원 수. 인덱스와 같아야 함
   BudgetEmail:
     Type: String
     Default: ""
-    Description: 예산 알림을 받을 이메일. 비워 두면 예산 알림을 만들지 않는다.
+    Description: Email for the budget alert. Leave empty to skip the budget.  # 예산 알림 이메일. 비우면 만들지 않음
   MonthlyBudgetUsd:
     Type: Number
     Default: 5
-    Description: 월 예산(달러). 80%를 넘으면 이메일로 알린다.
+    Description: Monthly budget in USD. Alerts by email above 80 percent.  # 월 예산. 80% 초과 시 알림
 
 Conditions:
   HasBudgetEmail: !Not [!Equals [!Ref BudgetEmail, ""]]
@@ -129,7 +131,7 @@ Resources:
     Properties:
       CodeUri: src/query/
       Handler: app.handler
-      Description: 질문 처리 Lambda (2주차 - 연결 확인)
+      Description: Query handler (week 2 - connection check)
       LoggingConfig:
         LogGroup: !Ref QueryFunctionLogGroup
       Environment:
@@ -198,7 +200,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub "${AWS::StackName} 화면과 API"
+        Comment: !Sub "${AWS::StackName} web and API"
         DefaultRootObject: index.html
         HttpVersion: http2
         PriceClass: PriceClass_200
@@ -254,23 +256,23 @@ Resources:
 
 Outputs:
   SiteUrl:
-    Description: 챗봇 화면 주소 (CloudFront)
+    Description: Chatbot site URL (CloudFront)
     Value: !Sub "https://${Distribution.DomainName}"
   HealthUrl:
-    Description: 연결 확인 API 주소
+    Description: Connection check API URL
     Value: !Sub "https://${Distribution.DomainName}/api/health"
   WebBucketName:
-    Description: 화면 파일 버킷
+    Description: Web bucket
     Value: !Ref WebBucket
   DocsBucketName:
-    Description: 문서 버킷
+    Description: Document bucket
     Value: !Ref DocsBucket
   VectorBucketArn:
-    Description: 벡터 버킷 ARN
+    Description: Vector bucket ARN
     Value: !GetAtt VectorBucket.VectorBucketArn
   VectorIndexArn:
-    Description: 벡터 인덱스 ARN
+    Description: Vector index ARN
     Value: !GetAtt VectorIndex.IndexArn
   QueryFunctionName:
-    Description: 질문 처리 Lambda 이름
+    Description: Query Lambda function name
     Value: !Ref QueryFunction
